@@ -1,0 +1,23 @@
+accelerate==1.9.0
+bitsandbytes==0.46.1
+datasets==3.6.0
+diffusers==0.34.0
+fastapi==0.116.1
+huggingface-hub==0.34.2
+numpy==2.1.2
+pandas==2.3.1
+peft==0.16.0
+pillow==11.0.0
+scikit-learn==1.7.1
+scipy==1.16.1
+sentencepiece==0.2.0
+sentence-transformers==5.1.0
+torch==2.7.1
+torchaudio==2.7.1
+torchvision==0.22.1
+transformers==4.55.2
+tqdm==4.67.1
+unsloth==2025.8.9
+vllm==0.10.1.1
+-e third_party/trl-0.19.1
+-e third_party/unsloth-zoo
