@@ -1,5 +1,5 @@
 # MO-GRPO-Med
-Official implementation of MO-GRPO-Med: a multi-objective, critic-free GRPO pipeline for clinical discharge instructions.
+Official implementation of MO-GRPO-MED: A MULTI-OBJECTIVE FRAMEWORK FOR GENERATING SAFE AND HIGH-QUALITY DISCHARGE INSTRUCTIONS.
 
 ## Environment Setup
 
