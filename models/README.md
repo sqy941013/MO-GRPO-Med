@@ -92,3 +92,16 @@ Community efforts
 - opensloth: Unsloth with experimental multi-GPU training features.
 
 Official, simplified multi-GPU support is in progress upstream—watch Unsloth announcements for updates.
+
+## GRPO Training (mo-grpo-med_train.py)
+
+Reinforcement learning with GRPO using multi-objective rewards (structure, coverage, medical factuality/safety, style).
+
+- Entry script: `models/mo-grpo-med_train.py`
+- Full instructions: see the root `README.md` → "GRPO Training (Reinforcement Learning)"
+- Reward modules and details: `models/rewards/README.md`
+
+Notes
+
+- The GRPO script sets `GRPO_OUTPUT_DIR` under `checkpoints/grpo/` for logs and artifacts.
+- Reward LLMs are configured via `REWARD_DS_V3_MODEL` and `REWARD_DS_R1_MODEL` env vars; OpenAI-compatible endpoint required.

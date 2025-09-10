@@ -258,3 +258,69 @@ Notes
 - Set `GRPO_DEBUG=1` to print raw outputs to stderr when JSON parsing fails.
 - You can stream incrementally via `chat_json_extract(..., stream=True)`; final JSON is parsed after streaming completes.
 - Use `return_raw=True` to also get the original text: `parsed, raw = chat_json_extract(..., return_raw=True)`.
+
+## GRPO Training (Reinforcement Learning)
+
+Train the DI generator with GRPO using multiple LLM-based reward functions (structure, coverage, medical factuality/safety, and style).
+
+Prerequisites
+
+- Ensure the patched TRL 0.19.1 and Unsloth-Zoo 2025.8.9 are installed (see "Third-Party Libraries (Patched)" above).
+- Set your OpenAI-compatible endpoint in environment variables or a `.env` file: `OPENAI_API_BASE`, `OPENAI_API_KEY`.
+- Prepare a GRPO CSV (default path `data/processed/mo-grpo-med_dataset.csv`). Required columns:
+	- `note_id`, `formated_source_note`, `gold_di`
+	- `gold_map`, `t_source_anchors`, `t_gold_anchors` (and optionally `t_all_anchors`)
+
+Quick start
+
+```powershell
+# PowerShell (Windows)
+$env:OPENAI_API_BASE = "https://api.openai.com/v1"
+$env:OPENAI_API_KEY = "YOUR_KEY"
+# Optional: choose reward LLMs (DeepSeek-style IDs shown as examples)
+$env:REWARD_DS_V3_MODEL = "deepseek-v3-250324"
+$env:REWARD_DS_R1_MODEL = "deepseek-r1-250528"
+# Optional: caching and logs
+$env:GRPO_CACHE_DIR = "data\intermediate"   # where reward_cache.csv will live (can override by REWARD_CACHE_CSV)
+$env:LLM_STREAM = "1"                         # stream LLM outputs for robustness
+$env:GRPO_DEBUG = "0"                         # set to 1 to dump raw JSON on parse errors
+
+python .\models\mo-grpo-med_train.py `
+	--model_name unsloth/Qwen3-4B-Instruct-2507-unsloth-bnb-4bit `
+	--csv_path data/processed/mo-grpo-med_dataset.csv `
+	--limit_samples 500 `
+	--max_steps 50 `
+	--use_expectile_baseline --expectile_tau 0.7 `
+	--use_advantage_delta --advantage_delta 0.65
+```
+
+Key flags (selected)
+
+- `--model_name`: base model to train with Unsloth (4-bit recommended for VRAM efficiency).
+- `--csv_path`: path to the GRPO training CSV (see required columns above).
+- `--limit_samples`: downsample rows for quick experiments (0 = use all).
+- `--max_steps`: number of GRPO steps.
+- Expectile baseline (robust baseline):
+	- `--use_expectile_baseline`, `--expectile_tau` (default 0.7)
+- Huberized advantages (stability):
+	- `--use_advantage_delta`, `--advantage_delta` (default 0.65)
+- Reward LLM selection (also available via env):
+	- `--reward_ds_v3_model`, `--reward_ds_r1_model`
+
+Outputs and logging
+
+- Checkpoints and logs under `checkpoints/grpo/<MODEL>_<TIMESTAMP>/`.
+- The script sets `GRPO_OUTPUT_DIR` to that folder for reward logs.
+- Reward logs (JSONL) include:
+	- `logs/llm_calls.jsonl`: raw/parsed LLM responses used by rewards.
+	- `logs/reward_steps.jsonl`: per-generation intermediate reward data.
+	- `logs/*_zeros.jsonl`: samples where a specific reward evaluated to 0.
+- Caching: `reward_cache.csv` (default path: `${GRPO_CACHE_DIR}/reward_cache.csv` or override via `REWARD_CACHE_CSV`).
+
+Troubleshooting
+
+- JSON parsing issues: set `GRPO_DEBUG=1` to print raw outputs; the helper automatically strips `<think>...</think>` for DeepSeek‑R1 before parsing.
+- Rate limits/instability: the reward caller retries with exponential backoff; you can lower `LLM_STREAM` to `0` to disable streaming if needed.
+- Missing CSV columns: ensure all required columns exist; otherwise the script will raise a clear error.
+
+For details on each reward component (structure/coverage/medfact/style), see `models/rewards/README.md`.
