@@ -46,7 +46,7 @@ This project modifies specific versions of two third-party libraries to add rese
 
 What changed
 
-- Expectile baseline: controlled by --expectile_tau; computes a baseline as an expectile of group returns, which can be more robust to outliers.
+- Expectile baseline: toggled by --use_expectile_baseline and controlled by --expectile_tau; computes a baseline as an expectile of group returns, which can be more robust to outliers.
 - Huberized advantages: optional clamping via --use_advantage_delta and --advantage_delta for stable optimization when large advantage magnitudes appear.
 - Optional z-score: --normalize_by_std divides by group standard deviation to normalize advantages.
 
@@ -66,6 +66,7 @@ Training flags (CLI)
 
 Add these arguments to your training script to control the new behavior:
 
+- --use_expectile_baseline (flag): Use τ-expectile baseline instead of mean.
 - --expectile_tau (float, default=0.7): Tau parameter for expectile baseline calculation.
 - --normalize_by_std (flag): Divide by group std (z-score) when computing advantages.
 - --use_advantage_delta (flag): Enable advantage clamp via advantage_delta in GRPO loss.
@@ -75,9 +76,9 @@ Add these arguments to your training script to control the new behavior:
 Example snippet in argparse
 
 ```python
+p.add_argument("--use_expectile_baseline", action="store_true", help="Use τ-expectile baseline instead of mean.")
 p.add_argument("--expectile_tau", type=float, default=0.7, help="Tau parameter for expectile baseline calculation.")
 p.add_argument("--normalize_by_std", action="store_true", help="Divide by group std (z-score).")
 p.add_argument("--use_advantage_delta", action="store_true", help="Enable advantage clamp via advantage_delta in GRPO loss.")
 p.add_argument("--advantage_delta", type=float, default=0.65, help="Clamp magnitude for advantages when enabled.")
-p.add_argument("--tau", type=float, default=0.7, help="Legacy tau parameter (use --expectile_tau instead)")
 ```
