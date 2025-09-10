@@ -82,3 +82,49 @@ p.add_argument("--normalize_by_std", action="store_true", help="Divide by group 
 p.add_argument("--use_advantage_delta", action="store_true", help="Enable advantage clamp via advantage_delta in GRPO loss.")
 p.add_argument("--advantage_delta", type=float, default=0.65, help="Clamp magnitude for advantages when enabled.")
 ```
+
+## Dataset Preprocessing (MIMIC-IV-Ext-iDS → SFT/RL)
+
+We provide a helper script to transform MIMIC-IV-Ext-iDS into SFT and RL training splits with subject-level isolation.
+
+- Script: `datasets/preprocess.py`
+- Default input: `datasets/raw/MIMIC-IV-Ext_iDS_with_PR.csv`
+- Outputs (under `datasets/processed/`):
+	- BCH: `BCH_train_sft.csv`, `BCH_train_rl.csv`, `BCH_dev.csv`, `BCH_test.csv`
+	- DI:  `DI_train_sft.csv`,  `DI_train_rl.csv`,  `DI_dev.csv`,  `DI_test.csv`
+
+Tasks
+
+- BCH: predict `brief_hospital_course` from structured inputs
+- DI:  predict `discharge_instructions` from structured inputs plus hospital course and discharge info
+
+Important
+
+- Run the script from the `datasets/` directory so relative paths resolve correctly.
+- Splits are subject-level (patients do not overlap across train/dev/test).
+- If your file name differs, either rename it to `MIMIC-IV-Ext_iDS_with_PR.csv` or modify `RAW_CSV` inside `preprocess.py`.
+
+Usage (PowerShell)
+
+```powershell
+# Navigate to the datasets folder
+cd .\datasets
+
+# BCH task
+python .\preprocess.py --mode BCH --split 9,0.5,0.5 --rl_ratio 0.2 --seed 42
+
+# DI task
+python .\preprocess.py --mode DI  --split 9,0.5,0.5 --rl_ratio 0.2 --seed 42
+
+# Optional caps for quick experiments (row and patient limits)
+python .\preprocess.py --mode DI --max_dev 1500 --max_test 1500 --max_dev_patient 0 --max_test_patient 0
+```
+
+Arguments
+
+- `--mode`: `BCH` or `DI`; selects input/target columns for the task.
+- `--split`: train,dev,test patient ratios (default `9,0.5,0.5` → normalized to 90/5/5).
+- `--rl_ratio`: fraction of `train_sft` reused as `train_rl` (default `0.2`).
+- `--max_dev`/`--max_test`: row caps for dev/test (0 = unlimited).
+- `--max_dev_patient`/`--max_test_patient`: patient caps for dev/test (0 = unlimited).
+- `--seed`: random seed for reproducibility.
