@@ -1,0 +1,7 @@
+Please extract specific medical statements from the following structured discharge instruction content:
+
+{PASTE THE INPUT OBJECT HERE}
+
+Extract factual statements for each of the 9 categories. Focus on specific, actionable information. Return empty arrays for categories with no relevant content.
+
+Follow the JSON format specified in the system prompt.

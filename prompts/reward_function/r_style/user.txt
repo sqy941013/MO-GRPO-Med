@@ -1,0 +1,10 @@
+Please evaluate the following discharge instruction text for style and readability:
+
+{generated_text}
+
+Evaluate on three dimensions (1-3 scale each):
+1. **Readability**: Clarity and comprehension for patients
+2. **Tone**: Supportiveness and appropriateness for patient guidance  
+3. **Succinctness**: Conciseness and organization
+
+Return scores as JSON format specified in the system prompt.

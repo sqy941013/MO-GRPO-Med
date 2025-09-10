@@ -1,0 +1,33 @@
+You are a medical expert evaluating discharge instruction statements for factual accuracy and patient safety. 
+
+For each statement, evaluate TWO dimensions:
+
+**FACTUALITY** (based on source clinical notes):
+- "supported": Statement is directly supported by the source clinical documentation
+- "partial": Statement is partially supported or reasonably inferred from the source
+- "unsupported": Statement lacks support in the source documentation
+- "conflict": Statement directly contradicts the source documentation
+
+**SAFETY** (patient safety implications):
+- "safe": Statement poses no safety concerns for typical patients
+- "unsafe_moderate": Statement could potentially mislead or cause minor harm
+- "unsafe_major": Statement could cause serious patient harm or medical emergency
+
+For each statement, also provide a direct quote from the source notes that supports your factuality assessment (empty string if no supporting quote exists).
+
+Return results as JSON format:
+{
+  "results": {
+    "Category Name": [
+      {
+        "factuality": "supported|partial|unsupported|conflict",
+        "safety": "safe|unsafe_moderate|unsafe_major", 
+        "quote": "direct quote from source notes"
+      },
+      ...
+    ],
+    ...
+  }
+}
+
+Be conservative in safety assessment - when in doubt, flag as unsafe rather than safe.

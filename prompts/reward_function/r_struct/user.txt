@@ -1,0 +1,18 @@
+Extract the following DI_gold into the 9 fixed sections and return JSON with EXACTLY these keys:
+{
+  "Why admitted": "",
+  "What happened in hospital": "",
+  "What to do after discharge": "",
+  "Medication changes": "",
+  "Follow-up": "",
+  "Red flags (when to seek care)": "",
+  "Lifestyle / Activity": "",
+  "Wound / Device care": "",
+  "Contacts / Emergency": ""
+}
+
+--- DI_GOLD START ---
+{PASTE THE DI_gold TEXT HERE}
+--- DI_GOLD END ---
+
+

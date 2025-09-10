@@ -1,0 +1,17 @@
+TASK
+Score the following de-identified Discharge Instruction (DI) using the rubric defined in the system message. Evaluate ONLY what is written in the DI; do not infer additional facts. Placeholders like “___” are not content.
+
+INPUT_DI
+<<BEGIN_DI>>
+{{DI_TEXT}}
+<<END_DI>>
+
+RESPONSE REQUIREMENTS
+- Return ONLY the JSON object described in the system message (no prose, no Markdown, no code fences).
+- Do NOT compute the overall mean score; set "overall.mean_score_0_to_5" to null (it will be computed by a program).
+- If a criterion lacks sufficient information, score according to the rubric (often 0–2) and explain briefly in "rationales".
+- Quote only short phrases from the DI in rationales when helpful.
+- Ignore non-textual elements (images/graphics) unless their meaning is explicitly stated in text.
+
+OUTPUT
+A single JSON object exactly matching the schema defined by the system message.

@@ -1,0 +1,14 @@
+Please evaluate the factual accuracy and safety of the following discharge instruction statements against the provided source clinical notes.
+
+**SOURCE CLINICAL NOTES:**
+{source_notes}
+
+**STATEMENTS TO EVALUATE:**
+{stmt}
+
+For each statement in each category, assess:
+1. **Factuality**: How well supported is this statement by the source notes?
+2. **Safety**: What are the patient safety implications of this statement?
+3. **Quote**: Provide supporting quote from source notes (if any)
+
+Return evaluation results in the JSON format specified in the system prompt.

@@ -187,3 +187,40 @@ Community repos that improve multi-GPU with Unsloth:
 
 - unsloth-5090-multiple
 - opensloth
+
+## Prompts (Templates for Evaluation, Rewards, Extraction, and Generation)
+
+This repo ships reusable prompt assets for judging, reward shaping, structure extraction, and DI generation.
+
+Locations
+
+- `prompts/di_judge/`: clinician-style rubric to grade a Discharge Instruction (DI)
+	- `system.txt`: scoring rubric, JSON schema, and instructions
+	- `user.txt`: input template; replace `{{DI_TEXT}}` with the DI to grade
+- `prompts/reward_function/`: LLM prompts used as reward sources in RL
+	- `r_cover/`: coverage/completeness
+	- `r_medfact/`: medical factual consistency/safety
+	- `r_struct/`: structure/format alignment
+	- `r_style/`: language clarity/readability/tone
+	- Each subfolder contains `system.txt` and `user.txt`, to be wired into your RM harness
+- `prompts/R_struct_extract.txt`: extractor prompt to parse a DI into 9 canonical sections (fixed JSON keys)
+- `prompts/reasoning_datset/system.txt`: system prompt to generate DI in physician letter-style (for reasoning SFT/data)
+
+How to use (Python, sketch)
+
+```python
+from pathlib import Path
+
+di_text = Path("examples/sample_di.txt").read_text(encoding="utf-8")
+system = Path("prompts/di_judge/system.txt").read_text(encoding="utf-8")
+user_t = Path("prompts/di_judge/user.txt").read_text(encoding="utf-8")
+user = user_t.replace("{{DI_TEXT}}", di_text)
+
+# Send [system, user] to your chat model and parse the JSON response.
+```
+
+Notes
+
+- All prompts assume JSON-only responses (no Markdown) when specified in the system message.
+- Keep the exact field names for extractors (e.g., the 9-section JSON in `R_struct_extract.txt`).
+- Reward prompts are templates; wire them into your evaluation or RL loop and normalize scores as needed.
