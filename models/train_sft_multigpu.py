@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-# models/train_sft.py
-import argparse, datetime, os, pandas as pd, numpy as np, torch
+# models/train_sft_multigpu.py
+import argparse, datetime, os, pandas as pd, torch
 from pathlib import Path
 
 # Import Unsloth FIRST — no PatchSFTTrainer needed anymore
-from unsloth import FastLanguageModel, is_bfloat16_supported      # auto-patches TRL internally
-from train_sft_chat_template import set_chat_template_for_di
+from unsloth import FastLanguageModel, unsloth_train      # auto-patches TRL internally
 # ─────────────────────────────────────────────────────────────────────────────
 
 from transformers import TrainingArguments
+from transformers import Trainer as HFTrainer
+from transformers import set_seed
 from datasets import Dataset, DatasetDict, load_dataset
 from trl import SFTTrainer, SFTConfig
 from loguru import logger
@@ -16,18 +17,6 @@ from loguru import logger
 SYSTEM_PROMPT = (
     "You are a clinical language model that writes clear, safe, "
     "patient-friendly discharge instructions."
-)
-
-# Reasoning tags and system prompt (for reasoning SFT mode)
-REASONING_START = "<think>"
-REASONING_END   = "</think>"
-SOLUTION_START  = "<answer>"
-SOLUTION_END    = "</answer>"
-REASONING_SYSTEM = (
-    "You are given a problem.\n"
-    "Think about the problem and provide your thinking process.\n"
-    f"Place it between {REASONING_START} and {REASONING_END}.\n"
-    f"Then, provide your answer between {SOLUTION_START}{SOLUTION_END}"
 )
 
 # 7 clinical sections
@@ -58,6 +47,55 @@ SEC_ORDER = [
     "diagnostic","course","dx","discharge_info"
 ]
 
+# ----------------- Monkey patch HF Trainer to avoid in-place loss scaling ----
+def _patch_trainer_compute_loss_no_inplace():
+    def _compute_loss(self, model, inputs, return_outputs=False, **kwargs):
+        outputs = model(**inputs)
+        if self.label_smoother is not None and "labels" in inputs:
+            loss = self.label_smoother(outputs, inputs["labels"])
+        else:
+            loss = outputs["loss"] if isinstance(outputs, dict) else outputs.loss
+        loss = loss.clone()
+        try:
+            num_processes = getattr(self.accelerator, "num_processes", 1) or 1
+        except Exception:
+            num_processes = 1
+        if num_processes > 1:
+            loss = loss * num_processes
+        return (loss, outputs) if return_outputs else loss
+
+    HFTrainer.compute_loss = _compute_loss
+
+_patch_trainer_compute_loss_no_inplace()
+
+# ----------------- Safe trainer to avoid inplace on fused loss --------------
+class SafeSFTTrainer(SFTTrainer):
+    """Overrides compute_loss to avoid in-place ops on Unsloth fused loss views.
+
+    - Clones the loss tensor before any scaling
+    - Uses out-of-place scaling for multi-process runs
+    """
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
+        outputs = model(**inputs)
+
+        if self.label_smoother is not None and "labels" in inputs:
+            loss = self.label_smoother(outputs, inputs["labels"])
+        else:
+            loss = outputs["loss"] if isinstance(outputs, dict) else outputs.loss
+
+        # Avoid in-place modification on a potential view returned by Unsloth
+        loss = loss.clone()
+
+        # Match HF behavior without in-place multiply for DDP
+        try:
+            num_processes = getattr(self.accelerator, "num_processes", 1) or 1
+        except Exception:
+            num_processes = 1
+        if num_processes > 1:
+            loss = loss * num_processes
+
+        return (loss, outputs) if return_outputs else loss
+
 # ----------------- CLI -------------------------------------------------------
 def get_args():
     p = argparse.ArgumentParser("SFT trainer (Unsloth)")
@@ -66,15 +104,6 @@ def get_args():
     p.add_argument("--model_name",
                    default="unsloth/gemma-3-4b-it-unsloth-bnb-4bit")
     p.add_argument("--max_seq_len", type=int, default=8192)
-    p.add_argument("--max_sample", type=int, default=0, help="Max samples to load for quick runs; 0 = unlimited")
-    # Reasoning SFT mode
-    p.add_argument("--reasoning_sft", action="store_true", help="Enable reasoning-path SFT mode using a separate dataset")
-    p.add_argument("--reasoning_dataset_path", default="data/related_datasets/MO-GRPO-Med-Reasoning-Dataset.csv",
-                   help="CSV file for reasoning SFT, when --reasoning_sft is set")
-    p.add_argument("--reasoning_length_quantile", type=float, default=0.9,
-                   help="Keep samples below this token-length quantile in reasoning mode (0<q<1). Set 0 to disable")
-    p.add_argument("--reasoning_limit_rows", type=int, default=0,
-                   help="Limit rows from reasoning dataset for quick tests (0 = unlimited)")
     p.add_argument("--lora_r",      type=int, default=64)
     p.add_argument("--lora_alpha",  type=int, default=64)
     p.add_argument("--target_modules",
@@ -98,6 +127,7 @@ def get_args():
     p.add_argument("--use_gradient_checkpointing", default="unsloth", help="Gradient checkpointing method")
     p.add_argument("--random_state", type=int, default=3407, help="Random seed")
     p.add_argument("--resume_from_checkpoint", type=str, default=None, help="Resume from checkpoint path")
+    p.add_argument("--testrun", action="store_true", help="Use a tiny subset (100 samples) for quick test runs")
     return p.parse_args()
 
 # ----------------- prompt builder -------------------------------------------
@@ -119,92 +149,8 @@ def row_to_chat(row: pd.Series):
         {"role": "assistant", "content": row["discharge_instructions"]},
     ]
 
-# ---------------- reasoning helpers -----------------------------------------
-def set_reasoning_chat_template(tokenizer):
-    """Install a simple reasoning chat template with <think> and <answer> tags."""
-    chat_template = (
-        "{% if messages[0]['role'] == 'system' %}"
-        "{{ messages[0]['content'] + eos_token }}"
-        "{% set loop_messages = messages[1:] %}"
-        "{% else %}"
-        f"{{ '{REASONING_SYSTEM}' + eos_token }}"
-        "{% set loop_messages = messages %}"
-        "{% endif %}"
-        "{% for message in loop_messages %}"
-        "{% if message['role'] == 'user' %}"
-        "{{ message['content'] }}"
-        "{% elif message['role'] == 'assistant' %}"
-        "{{ message['content'] + eos_token }}"
-        "{% endif %}"
-        "{% endfor %}"
-        "{% if add_generation_prompt %}"
-        f"{{ '{REASONING_START}' }}"
-        "{% endif %}"
-    )
-    tokenizer.chat_template = chat_template
-
-
-def load_reasoning_dataset(csv_path: str, tokenizer) -> 'Dataset':
-    """Load reasoning CSV and convert to a single text field via chat template."""
-    df = pd.read_csv(csv_path)
-    if not len(df):
-        raise ValueError(f"Empty reasoning dataset: {csv_path}")
-
-    def format_row(row):
-        user_content = row.get("question", "")
-        raw_output = row.get("output", "")
-
-        # Try to extract <think> ... </think>
-        if "<think>" in raw_output and "</think>" in raw_output:
-            t_s = raw_output.find("<think>") + len("<think>")
-            t_e = raw_output.find("</think>")
-            think_content = raw_output[t_s:t_e].strip()
-            answer_content = raw_output[t_e + len("</think>"):].strip() or row.get("final_decision", "")
-        else:
-            think_content = raw_output
-            answer_content = row.get("final_decision", "")
-
-        assistant_content = (
-            f"{REASONING_START}{think_content}{REASONING_END}"
-            f"{SOLUTION_START}{answer_content}{SOLUTION_END}"
-        )
-        messages = [
-            {"role": "system", "content": REASONING_SYSTEM},
-            {"role": "user", "content": user_content},
-            {"role": "assistant", "content": assistant_content},
-        ]
-        return {"text": tokenizer.apply_chat_template(messages, tokenize=False)}
-
-    from datasets import Dataset as HFDataset  # local import to avoid overhead
-    ds = HFDataset.from_pandas(df)
-    ds = ds.map(lambda ex: format_row(ex))
-    return ds
-
-
-def filter_reasoning_by_length(ds, tokenizer, quantile: float = 0.9):
-    """Keep samples below a token-length quantile to reduce truncation."""
-    if not (0 < quantile < 1):
-        return ds
-    if len(ds) == 0:
-        return ds
-    def _lens(batch):
-        texts = batch["text"]
-        toks = tokenizer(texts, return_attention_mask=False, add_special_tokens=False)
-        return {"L": [len(x) for x in toks["input_ids"]]}
-    tokenized = ds.map(_lens, batched=True, desc="Computing lengths")
-    try:
-        L = np.array(tokenized["L"])  # type: ignore
-        cutoff = int(np.quantile(L, quantile))
-        keep_idx = np.where(L <= cutoff)[0].tolist()
-        logger.info(f"Reasoning max length at q={quantile}: {cutoff}")
-        ds = ds.select(keep_idx)
-    except Exception as e:
-        logger.warning(f"Length filter failed: {e}; skipping")
-        ds = tokenized.remove_columns(["L"]) if "L" in tokenized.column_names else tokenized
-    return ds
-
 # ---------------- dataset builder (memory-efficient) -------------------
-def build_dataset(csv_path: Path, tokenizer: object, is_train: bool, max_sample: int | None = None):
+def build_dataset(csv_path: Path, tokenizer: object, is_train: bool, *, limit_samples: int | None = None):
     """
     Build dataset and preprocess in a memory-efficient way.
     """
@@ -232,11 +178,11 @@ def build_dataset(csv_path: Path, tokenizer: object, is_train: bool, max_sample:
         return {"text": formatted_texts}
 
     # Load from CSV with datasets.load_dataset to save memory
-    # Support sample limit: slice early to reduce map load
-    slice_split = "train"
-    if isinstance(max_sample, int) and max_sample > 0:
-        slice_split = f"train[:{int(max_sample)}]"
-    raw_dataset = load_dataset("csv", data_files=str(csv_path), split=slice_split, keep_in_memory=False)
+    raw_dataset = load_dataset("csv", data_files=str(csv_path), split="train", keep_in_memory=False)
+
+    # Optionally limit dataset size for quick test runs
+    if limit_samples is not None and limit_samples > 0:
+        raw_dataset = raw_dataset.select(range(min(limit_samples, len(raw_dataset))))
     
     # Use .map() with batching to avoid loading all data into memory
     processed_dataset = raw_dataset.map(
@@ -264,23 +210,6 @@ def show_memory_stats(stage=""):
         return memory_used
     return 0
 
-# ----------------- lora utils ---------------------------------------------
-def _model_has_lora_adapters(model) -> bool:
-    """Robustly detect whether the model already has LoRA adapters attached."""
-    try:
-        from peft import PeftModel  # type: ignore
-        if isinstance(model, PeftModel):
-            return True
-    except Exception:
-        pass
-    # Fallback: check common attributes
-    try:
-        if hasattr(model, "peft_config") or hasattr(model, "peft_type"):
-            return True
-    except Exception:
-        pass
-    return False
-
 # ----------------- model saving utilities -------------------------------
 def save_model(model, tokenizer, args, ckpt_dir):
     """Save model according to requested format"""
@@ -306,98 +235,78 @@ def save_model(model, tokenizer, args, ckpt_dir):
 # ----------------- main ------------------------------------------------------
 def main():
     args = get_args()
+    # Ensure deterministic init across ranks
+    try:
+        set_seed(args.random_state)
+    except Exception:
+        pass
     
     print("🚀 Starting SFT training with improved configuration")
-    if args.reasoning_sft:
-        print("📝 Mode: Reasoning SFT")
-    else:
-        print(f"📝 Task: {args.task}")
+    print(f"📝 Task: {args.task}")
     print(f"🤖 Model: {args.model_name}")
     print(f"💾 Save format: {args.save_format}")
 
-    if not args.reasoning_sft:
-        train_csv = Path(args.data_dir) / f"{args.task}_train_sft.csv"
-        dev_csv   = Path(args.data_dir) / f"{args.task}_dev.csv"
-        if not train_csv.exists():
-            raise FileNotFoundError(f"Training file not found: {train_csv}")
-        if not dev_csv.exists():
-            raise FileNotFoundError(f"Development file not found: {dev_csv}")
+    train_csv = Path(args.data_dir) / f"{args.task}_train_sft.csv"
+    dev_csv   = Path(args.data_dir) / f"{args.task}_dev.csv"
+
+    # Check if files exist
+    if not train_csv.exists():
+        raise FileNotFoundError(f"Training file not found: {train_csv}")
+    if not dev_csv.exists():
+        raise FileNotFoundError(f"Development file not found: {dev_csv}")
 
     start_memory = show_memory_stats("Initial")
 
-    # accelerate devicemap
-    try:
-        from accelerate import PartialState
-        device_string = PartialState().process_index
-        device_map = {"": device_string}
-    except Exception:
-        # Fallback to auto placement if accelerate is unavailable
-        device_map = "auto"
+    # In multi-GPU runs, let Accelerate/DDP handle device placement; avoid custom maps that cause DDP inconsistencies
+    local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+    if torch.cuda.is_available():
+        try:
+            torch.cuda.set_device(local_rank)
+        except Exception:
+            pass
 
     # 1) load model & LoRA
     print("🔧 Loading model and setting up LoRA...")
+    # For 4bit/8bit quantized weights, place on target device at load time
+    current_device = torch.cuda.current_device() if torch.cuda.is_available() else "cpu"
+    device_map = {"": current_device}
+
     model, tok = FastLanguageModel.from_pretrained(
         args.model_name,
         max_seq_length=args.max_seq_len,
         load_in_4bit=True,
         # fast_inference=True, # Enable vLLM fast inference
         trust_remote_code=True,
-        # device_map = "balanced"
         device_map=device_map
     )
+    model = FastLanguageModel.get_peft_model(
+        model,
+        r=args.lora_r,
+        lora_alpha=args.lora_alpha,
+        target_modules=args.target_modules.split(","),
+        lora_dropout=0.05,
+        bias="none",
+        use_gradient_checkpointing=args.use_gradient_checkpointing,
+        random_state=args.random_state,
+        use_rslora=False,   # We support rank stabilized LoRA
+        loftq_config=None,  # And LoftQ
+    )
+    # Log parameter counts per rank for debugging DDP consistency
     try:
-        if _model_has_lora_adapters(model):
-            print("[Info] Detected existing LoRA adapters in the loaded model. Skipping re-injection and continuing training.")
-        else:
-            model = FastLanguageModel.get_peft_model(
-                model,
-                r=args.lora_r,
-                lora_alpha=args.lora_alpha,
-                target_modules=args.target_modules.split(","),
-                lora_dropout=0.05,
-                bias="none",
-                use_gradient_checkpointing=args.use_gradient_checkpointing,
-                random_state=args.random_state,
-                use_rslora=False,
-                loftq_config=None,
-            )
-    except TypeError as e:
-        # Handle Unsloth error: LoRA already present with mismatched params
-        msg = str(e)
-        if "already has LoRA adapters" in msg:
-            print("[Warn] Model already has LoRA adapters; will reuse existing adapters and continue training.")
-        else:
-            raise
+        total_params = sum(p.numel() for p in model.parameters())
+        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        print(f"[rank{os.environ.get('LOCAL_RANK','0')}] Params total={total_params}, trainable={trainable_params}")
+    except Exception:
+        pass
 
-    # 2) Chat template + datasets
-    if args.reasoning_sft:
-        # Reasoning template
-        try:
-            set_reasoning_chat_template(tok)
-        except Exception as e:
-            print(f"[Warn] Failed to set reasoning chat template: {e}")
-        # Load reasoning dataset
-        r_path = Path(args.reasoning_dataset_path)
-        if not r_path.exists():
-            raise FileNotFoundError(f"Reasoning dataset not found: {r_path}")
-        ds = load_reasoning_dataset(str(r_path), tok)
-        if args.reasoning_limit_rows and args.reasoning_limit_rows > 0:
-            ds = ds.select(range(min(args.reasoning_limit_rows, len(ds))))
-        ds = filter_reasoning_by_length(ds, tok, args.reasoning_length_quantile) if (0 < args.reasoning_length_quantile < 1) else ds
-        train_ds, dev_ds = ds, None
-    else:
-        # DI/BCH template
-        try:
-            set_chat_template_for_di(tok, SYSTEM_PROMPT)
-        except Exception as e:
-            print(f"[Warn] Failed to set chat template: {e}")
-        # Structured datasets
-        train_ds = build_dataset(train_csv, tok, is_train=True, max_sample=args.max_sample)
-        dev_ds   = build_dataset(dev_csv,   tok, is_train=False, max_sample=args.max_sample)
+    # 2) datasets
+    subset_limit = 100 if args.testrun else None
+    train_ds = build_dataset(train_csv, tok, is_train=True,  limit_samples=subset_limit)
+    dev_ds   = build_dataset(dev_csv,   tok, is_train=False, limit_samples=subset_limit)
 
     model_memory = show_memory_stats("Model loaded")
 
-    # 4) trainer with SFTConfig
+    # 3) trainer with SFTConfig
     print("🏋️  Setting up trainer...")
     
     # Build output directory
@@ -434,9 +343,7 @@ def main():
         save_steps=args.save_steps,
         
         # Performance
-        # enable bf16 if available
-        bf16=is_bfloat16_supported(),
-        fp16=not is_bfloat16_supported(),
+        # bf16=True,
         dataloader_pin_memory=False,
         group_by_length=True,
         
@@ -446,7 +353,7 @@ def main():
         ddp_find_unused_parameters = False
     )
     
-    trainer = SFTTrainer(
+    trainer = SafeSFTTrainer(
         model=model,
         tokenizer=tok,
         train_dataset=train_ds,
@@ -454,20 +361,41 @@ def main():
         args=training_config,
     )
 
-    # 5) Train
+    # Ensure Unsloth's wrapper uses a safe non-inplace compute_loss
+    try:
+        import types
+
+        def _safe_old_compute_loss(self, model, inputs, return_outputs=False, **kwargs):
+            outputs = model(**inputs)
+            if self.label_smoother is not None and "labels" in inputs:
+                loss = self.label_smoother(outputs, inputs["labels"])
+            else:
+                loss = outputs["loss"] if isinstance(outputs, dict) else outputs.loss
+            loss = loss.clone()
+            try:
+                num_processes = getattr(self.accelerator, "num_processes", 1) or 1
+            except Exception:
+                num_processes = 1
+            if num_processes > 1:
+                loss = loss * num_processes
+            return (loss, outputs) if return_outputs else loss
+
+        trainer._old_compute_loss = types.MethodType(_safe_old_compute_loss, trainer)
+    except Exception:
+        pass
+
+    # 4) Train
     print("🎯 Starting training...")
     
     try:
         if args.resume_from_checkpoint:
             print(f"🔄 Resuming from checkpoint: {args.resume_from_checkpoint}")
-            trainer_stats = trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
-        else:
-            trainer_stats = trainer.train()
+        trainer_stats = unsloth_train(trainer, resume_from_checkpoint=args.resume_from_checkpoint)
     except Exception as e:
         print(f"❌ Training failed with error: {e}")
         raise
 
-    # 6) Show training stats
+    # 5) Show training stats
     training_memory = show_memory_stats("Training completed")
     
     if hasattr(trainer_stats, 'metrics'):
@@ -480,7 +408,7 @@ def main():
             training_percent = round(training_memory_used / max_memory * 100, 3)
             print(f"🖥️  Peak training memory = {training_memory_used} GB ({training_percent}%)")
 
-    # 7) Save model
+    # 6) Save model
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     
     try:

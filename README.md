@@ -139,9 +139,28 @@ python ./models/train_sft.py --task DI --data_dir datasets/processed --batch_siz
 
 # BCH task
 python ./models/train_sft.py --task BCH --data_dir datasets/processed --batch_size 4 --grad_accum 4 --epochs 2 --lr 2e-5
+
+# Reasoning SFT
+python ./models/train_sft.py --reasoning_sft \
+	--reasoning_dataset_path data/related_datasets/MO-GRPO-Med-Reasoning-Dataset.csv \
+	--batch_size 2 --grad_accum 8 --epochs 3 --lr 2e-4
 ```
 
 Notes
 
 - Ensure patched TRL/Unsloth-Zoo are installed via `scripts/reinstall_trl_unsloth_zoo.sh` if you use the expectile/HAL features.
 - More options and details are in `models/README.md`.
+
+### Multi-GPU (torchrun)
+
+```bash
+# 4 GPUs example
+CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --nproc_per_node=4 \
+	./models/train_sft_multigpu.py \
+	--task DI \
+	--data_dir datasets/processed \
+	--batch_size 2 \
+	--grad_accum 8 \
+	--epochs 2 \
+	--lr 2e-5
+```
