@@ -84,5 +84,4 @@ p.add_argument("--tau", type=float, default=0.7, help="Legacy tau parameter (use
 
 Notes
 
-- --use_huber_advantage is commented out above but kept for clarity; the recommended path is --use_advantage_delta which aligns with the current GRPO implementation.
 - Ensure your environment uses the editable installs so updates in third_party/ are immediately reflected.
