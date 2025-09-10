@@ -24,20 +24,39 @@ Prompt templates used by MO-GRPO-Med for evaluation, rewards, structure extracti
 
 ```python
 from pathlib import Path
+import sys
+sys.path.append("scripts")
+from openai_helper import load_client, chat_json_extract
+
+client = load_client()
+model = "gpt-4o-mini"  # or compatible; see R1 note below
+
 di_text = Path("examples/sample_di.txt").read_text(encoding="utf-8")
 system = Path("prompts/di_judge/system.txt").read_text(encoding="utf-8")
 user_t = Path("prompts/di_judge/user.txt").read_text(encoding="utf-8")
 user = user_t.replace("{{DI_TEXT}}", di_text)
-# Send [system, user] to a chat model; expect a single JSON object per the schema.
+
+result = chat_json_extract(client, model, system, user, temperature=0.2)
+print(result)  # Python dict per the schema
 ```
 
 2) Structure Extractor
 
 ```python
 from pathlib import Path
-extractor = Path("prompts/R_struct_extract.txt").read_text(encoding="utf-8")
+import sys
+sys.path.append("scripts")
+from openai_helper import load_client, chat_json_extract
+
+client = load_client()
+model = "gpt-4o-mini"
+
 note_text = Path("examples/sample_di.txt").read_text(encoding="utf-8")
-# Use as the sole system prompt; pass the note as user content. Expect fixed-key JSON with 9 sections.
+system = Path("prompts/R_struct_extract.txt").read_text(encoding="utf-8")
+user = note_text
+
+sections = chat_json_extract(client, model, system, user)
+print(list(sections.keys()))  # 9 canonical keys
 ```
 
 3) Reward Prompts
@@ -53,5 +72,8 @@ note_text = Path("examples/sample_di.txt").read_text(encoding="utf-8")
 ## Notes
 
 - Prefer JSON-only completions where the system message requires it; avoid Markdown fences.
+- The helper uses `response_format={"type":"json_object"}` for non‑R1 models.
+- For DeepSeek‑R1, the helper avoids `response_format` and strips `<think>...</think>` before JSON parsing.
+- Set `GRPO_DEBUG=1` to print raw content to stderr when parsing fails; optionally use `return_raw=True`.
 - Preserve exact key names for extractors to simplify downstream parsing.
 - You can customize these prompts, but keep schema compatibility if code depends on specific fields.

@@ -206,21 +206,55 @@ Locations
 - `prompts/R_struct_extract.txt`: extractor prompt to parse a DI into 9 canonical sections (fixed JSON keys)
 - `prompts/reasoning_datset/system.txt`: system prompt to generate DI in physician letter-style (for reasoning SFT/data)
 
-How to use (Python, sketch)
+Using with the OpenAI helper
+
+`scripts/openai_helper.py` provides two utilities:
+
+- `load_client()`: loads `OPENAI_API_BASE` and `OPENAI_API_KEY` from environment or `.env` and returns a client.
+- `chat_json_extract(...)`: calls chat completions and returns parsed JSON, with smart handling for DeepSeek-R1 models.
+
+DI grading example (JSON parsed for you)
 
 ```python
 from pathlib import Path
+import sys
+sys.path.append("scripts")  # ensure scripts/ is importable
+from openai_helper import load_client, chat_json_extract
+
+client = load_client()
+model = "gpt-4o-mini"  # or a compatible model; for DeepSeek-R1 see notes below
 
 di_text = Path("examples/sample_di.txt").read_text(encoding="utf-8")
 system = Path("prompts/di_judge/system.txt").read_text(encoding="utf-8")
 user_t = Path("prompts/di_judge/user.txt").read_text(encoding="utf-8")
 user = user_t.replace("{{DI_TEXT}}", di_text)
 
-# Send [system, user] to your chat model and parse the JSON response.
+result = chat_json_extract(client, model, system, user, temperature=0.2)
+print(result)  # a Python dict parsed from the model's JSON output
+```
+
+Structure extraction example
+
+```python
+from pathlib import Path
+import sys
+sys.path.append("scripts")
+from openai_helper import load_client, chat_json_extract
+
+client = load_client()
+model = "gpt-4o-mini"
+
+note_text = Path("examples/sample_di.txt").read_text(encoding="utf-8")
+system = Path("prompts/R_struct_extract.txt").read_text(encoding="utf-8")
+user = note_text  # extractor prompt expects the note as user content
+
+sections = chat_json_extract(client, model, system, user)
+print(sections.keys())  # 9 canonical section keys
 ```
 
 Notes
 
-- All prompts assume JSON-only responses (no Markdown) when specified in the system message.
-- Keep the exact field names for extractors (e.g., the 9-section JSON in `R_struct_extract.txt`).
-- Reward prompts are templates; wire them into your evaluation or RL loop and normalize scores as needed.
+- The helper forces `response_format={"type":"json_object"}` for non‑R1 models, and automatically strips `<think>...</think>` for DeepSeek‑R1 before parsing JSON. Keep the prompts' JSON schema unchanged.
+- Set `GRPO_DEBUG=1` to print raw outputs to stderr when JSON parsing fails.
+- You can stream incrementally via `chat_json_extract(..., stream=True)`; final JSON is parsed after streaming completes.
+- Use `return_raw=True` to also get the original text: `parsed, raw = chat_json_extract(..., return_raw=True)`.
