@@ -24,21 +24,21 @@ Generated files:
 
 If your downloaded file has a different name (e.g., `MIMIC-IV-Ext-iDS.csv`), rename it to `MIMIC-IV-Ext_iDS_with_PR.csv` or edit the `RAW_CSV` constant inside `preprocess.py`.
 
-### Run (PowerShell)
+### Run (Ubuntu/Linux)
 
 Run from the `datasets/` directory so relative paths resolve correctly:
 
-```powershell
-cd .\datasets
+```bash
+cd ./datasets
 
 # BCH task
-python .\preprocess.py --mode BCH --split 9,0.5,0.5 --rl_ratio 0.2 --seed 42
+python ./preprocess.py --mode BCH --split 9,0.5,0.5 --rl_ratio 0.2 --seed 42
 
 # DI task
-python .\preprocess.py --mode DI  --split 9,0.5,0.5 --rl_ratio 0.2 --seed 42
+python ./preprocess.py --mode DI  --split 9,0.5,0.5 --rl_ratio 0.2 --seed 42
 
 # Optional: reduce size for quick experiments (row/patient caps)
-python .\preprocess.py --mode DI --max_dev 1500 --max_test 1500 --max_dev_patient 0 --max_test_patient 0
+python ./preprocess.py --mode DI --max_dev 1500 --max_test 1500 --max_dev_patient 0 --max_test_patient 0
 ```
 
 ### Arguments

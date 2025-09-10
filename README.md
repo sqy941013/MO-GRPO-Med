@@ -104,20 +104,20 @@ Important
 - Splits are subject-level (patients do not overlap across train/dev/test).
 - If your file name differs, either rename it to `MIMIC-IV-Ext_iDS_with_PR.csv` or modify `RAW_CSV` inside `preprocess.py`.
 
-Usage (PowerShell)
+Usage (Ubuntu/Linux)
 
-```powershell
+```bash
 # Navigate to the datasets folder
-cd .\datasets
+cd ./datasets
 
 # BCH task
-python .\preprocess.py --mode BCH --split 9,0.5,0.5 --rl_ratio 0.2 --seed 42
+python ./preprocess.py --mode BCH --split 9,0.5,0.5 --rl_ratio 0.2 --seed 42
 
 # DI task
-python .\preprocess.py --mode DI  --split 9,0.5,0.5 --rl_ratio 0.2 --seed 42
+python ./preprocess.py --mode DI  --split 9,0.5,0.5 --rl_ratio 0.2 --seed 42
 
 # Optional caps for quick experiments (row and patient limits)
-python .\preprocess.py --mode DI --max_dev 1500 --max_test 1500 --max_dev_patient 0 --max_test_patient 0
+python ./preprocess.py --mode DI --max_dev 1500 --max_test 1500 --max_dev_patient 0 --max_test_patient 0
 ```
 
 Arguments
@@ -128,3 +128,20 @@ Arguments
 - `--max_dev`/`--max_test`: row caps for dev/test (0 = unlimited).
 - `--max_dev_patient`/`--max_test_patient`: patient caps for dev/test (0 = unlimited).
 - `--seed`: random seed for reproducibility.
+
+## SFT Training (Quick Start)
+
+After preprocessing the dataset, start SFT with the Unsloth-based trainer:
+
+```bash
+# DI task
+python ./models/train_sft.py --task DI --data_dir datasets/processed --batch_size 4 --grad_accum 4 --epochs 2 --lr 2e-5
+
+# BCH task
+python ./models/train_sft.py --task BCH --data_dir datasets/processed --batch_size 4 --grad_accum 4 --epochs 2 --lr 2e-5
+```
+
+Notes
+
+- Ensure patched TRL/Unsloth-Zoo are installed via `scripts/reinstall_trl_unsloth_zoo.sh` if you use the expectile/HAL features.
+- More options and details are in `models/README.md`.
