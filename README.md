@@ -81,7 +81,3 @@ p.add_argument("--use_advantage_delta", action="store_true", help="Enable advant
 p.add_argument("--advantage_delta", type=float, default=0.65, help="Clamp magnitude for advantages when enabled.")
 p.add_argument("--tau", type=float, default=0.7, help="Legacy tau parameter (use --expectile_tau instead)")
 ```
-
-Notes
-
-- Ensure your environment uses the editable installs so updates in third_party/ are immediately reflected.
