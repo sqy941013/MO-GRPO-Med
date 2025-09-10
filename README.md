@@ -164,3 +164,26 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --nproc_per_node=4 \
 	--epochs 2 \
 	--lr 2e-5
 ```
+
+Guidance for Unsloth multi-GPU
+
+- You can use Accelerate or DeepSpeed with Unsloth to run DDP/FSDP today.
+- Ensure `ddp_find_unused_parameters = False` in SFTConfig/TrainingArguments (already set in this repo).
+- Launch options:
+	- `accelerate launch ./models/train_sft_multigpu.py --task DI ...`
+	- `torchrun --nproc_per_node N ./models/train_sft_multigpu.py --task DI ...`
+- If VRAM is insufficient per GPU, enable pipeline/model sharding by loading with `device_map="balanced"`:
+
+```python
+from unsloth import FastLanguageModel
+model, tokenizer = FastLanguageModel.from_pretrained(
+		"unsloth/Llama-3.3-70B-Instruct",
+		load_in_4bit=True,
+		device_map="balanced",
+)
+```
+
+Community repos that improve multi-GPU with Unsloth:
+
+- unsloth-5090-multiple
+- opensloth

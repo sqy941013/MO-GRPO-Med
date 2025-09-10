@@ -67,26 +67,28 @@ Outputs
 
 Distributed SFT using Unsloth + TRL with Hugging Face Accelerate/torchrun semantics.
 
-Run (Ubuntu/Linux)
+- Unsloth works with Accelerate/DeepSpeed; you can use DDP/FSDP today.
+- This repo already sets `ddp_find_unused_parameters = False` in SFTConfig as recommended.
+- Launch via either:
+	- Accelerate: `accelerate launch ./models/train_sft_multigpu.py --task DI ...`
+	- Torchrun: `torchrun --nproc_per_node N ./models/train_sft_multigpu.py --task DI ...`
 
-```bash
-# Example: 4 GPUs
-CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --nproc_per_node=4 \
-	./models/train_sft_multigpu.py \
-	--task DI \
-	--data_dir datasets/processed \
-	--batch_size 2 \
-	--grad_accum 8 \
-	--epochs 2 \
-	--lr 2e-5
+Pipeline/model sharding (insufficient VRAM per GPU)
 
-# Quick test run on a tiny subset
-CUDA_VISIBLE_DEVICES=0,1 torchrun --nproc_per_node=2 \
-	./models/train_sft_multigpu.py --task BCH --testrun
+To enable model splitting across GPUs (e.g., for very large models), pass `device_map="balanced"` at load time:
+
+```python
+from unsloth import FastLanguageModel
+model, tokenizer = FastLanguageModel.from_pretrained(
+		"unsloth/Llama-3.3-70B-Instruct",
+		load_in_4bit=True,
+		device_map="balanced",
+)
 ```
 
-Notes
+Community efforts
 
-- Ensure patched TRL/Unsloth-Zoo are installed if you rely on expectile/HAL features.
-- Quantized 4-bit/8-bit weights are placed on the correct device at load; avoid manual device_map in DDP.
-- Set `--resume_from_checkpoint` to continue from a prior run.
+- unsloth-5090-multiple: a fork focused on efficient multi-GPU for RTX 5090-like setups.
+- opensloth: Unsloth with experimental multi-GPU training features.
+
+Official, simplified multi-GPU support is in progress upstream—watch Unsloth announcements for updates.
