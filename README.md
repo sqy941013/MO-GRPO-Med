@@ -1,6 +1,27 @@
 # MO-GRPO-Med
 Official implementation of MO-GRPO-MED: A MULTI-OBJECTIVE FRAMEWORK FOR GENERATING SAFE AND HIGH-QUALITY DISCHARGE INSTRUCTIONS.
 
+## 📝 Citation
+
+**Paper Accepted at IEEE ICASSP 2026!** 🎉
+
+This work has been accepted for presentation at the **IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP 2026)**, to be held in Barcelona, Spain, May 4-8, 2026.
+
+If you use this code or find our work helpful, please cite:
+
+```bibtex
+@inproceedings{shen2026mogrpomed,
+  title={MO-GRPO-Med: A Multi-Objective Framework for Generating Safe and High-Quality Discharge Instructions},
+  author={Shen, Qingyang and Zhang, Xiaozhi and Guo, Quan and Yi, Zhang},
+  booktitle={IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)},
+  year={2026},
+  month={May},
+  address={Barcelona, Spain},
+  organization={IEEE},
+  note={Paper ID: 11885}
+}
+```
+
 ## Environment Setup
 
 ```bash

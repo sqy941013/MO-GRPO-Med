@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "MO-GRPO-Med: A Multi-Objective Framework for Generating Safe and High-Quality Discharge Instructions"
+authors:
+  - family-names: "Shen"
+    given-names: "Qingyang"
+  - family-names: "Zhang"
+    given-names: "Xiaozhi"
+  - family-names: "Guo"
+    given-names: "Quan"
+  - family-names: "Yi"
+    given-names: "Zhang"
+type: conference-paper
+conference:
+  name: "IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)"
+  location: "Barcelona, Spain"
+  date-start: 2026-05-04
+  date-end: 2026-05-08
+year: 2026
+url: "https://github.com/sqy941013/MO-GRPO-Med"
+repository-code: "https://github.com/sqy941013/MO-GRPO-Med"
+abstract: "MO-GRPO-Med is a multi-objective reinforcement learning framework for generating clinically safe, accurate, and well-structured discharge instructions (DIs) by jointly optimizing structure, coverage, medical factuality, and patient-centered style."
+keywords:
+  - "multi-objective reinforcement learning"
+  - "medical text generation"
+  - "discharge instructions"
+  - "clinical NLP"
+  - "GRPO"
+  - "large language models"
+license: "Apache-2.0"
