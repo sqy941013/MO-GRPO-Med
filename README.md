@@ -1,100 +1,119 @@
 # MO-GRPO-Med
-Official implementation of MO-GRPO-MED: A MULTI-OBJECTIVE FRAMEWORK FOR GENERATING SAFE AND HIGH-QUALITY DISCHARGE INSTRUCTIONS.
 
-## 📝 Citation
+Official implementation of **MO-GRPO-Med: A Multi-Objective Framework for Generating Safe and High-Quality Discharge Instructions**.
 
 **Paper Accepted at IEEE ICASSP 2026!** 🎉
 
-This work has been accepted for presentation at the **IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP 2026)**, to be held in Barcelona, Spain, May 4-8, 2026.
+---
 
-If you use this code or find our work helpful, please cite:
+## 📑 Table of Contents
 
-```bibtex
-@inproceedings{shen2026mogrpomed,
-  title={MO-GRPO-Med: A Multi-Objective Framework for Generating Safe and High-Quality Discharge Instructions},
-  author={Shen, Qingyang and Zhang, Xiaozhi and Guo, Quan and Yi, Zhang},
-  booktitle={IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)},
-  year={2026},
-  month={May},
-  address={Barcelona, Spain},
-  organization={IEEE},
-  note={Paper ID: 11885}
-}
-```
+- [Environment Setup](#-environment-setup)
+- [Environment Variables](#-environment-variables)
+- [Third-Party Libraries](#-third-party-libraries-patched)
+- [Dataset Preprocessing](#-dataset-preprocessing)
+- [SFT Training](#-sft-training)
+- [Multi-GPU Training](#multi-gpu-training)
+- [Prompts and Templates](#-prompts-and-templates)
+- [GRPO Training](#-grpo-training-reinforcement-learning)
+- [Citation](#-citation)
 
-## Environment Setup
+---
+
+## 🚀 Environment Setup
+
+### Step 1: Create Conda Environment
 
 ```bash
-# create and activate a dedicated conda environment
+# Create and activate a dedicated conda environment
 conda create -n mo-grpo-med python=3.12
 conda activate mo-grpo-med
+```
 
-# install PyTorch (CUDA 12.6)
+### Step 2: Install Dependencies
+
+```bash
+# Install PyTorch (CUDA 12.6)
 pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu126
 
-# install Unsloth
+# Install Unsloth
 pip install unsloth==2025.8.9
 
-# install remaining dependencies
+# Install remaining dependencies
 pip install -r requirements.txt
 ```
 
-## Environment Variables
+---
+
+## 🔑 Environment Variables
 
 This project reads configuration from environment variables. Use a `.env` file in the project root to store secrets for local development.
 
-- Copy `.env.example` to `.env` and fill in the values you need.
-- Never commit your `.env` file to version control.
+### Quick Setup
 
-Variables:
+1. Copy `.env.example` to `.env` and fill in the values you need
+2. Never commit your `.env` file to version control
 
-- OPENAI_API_BASE: Base URL for the OpenAI (or OpenAI-compatible) API. Example: https://api.openai.com/v1
-- OPENAI_API_KEY: Your API key for the provider specified by OPENAI_API_BASE.
-- WANDB_API_KEY (optional): API key for Weights & Biases if you use experiment tracking.
-- HF_TOKEN (optional): Hugging Face access token for private models/datasets.
+### Required Variables
 
-Tips:
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `OPENAI_API_BASE` | Base URL for OpenAI (or OpenAI-compatible) API | `https://api.openai.com/v1` |
+| `OPENAI_API_KEY` | Your API key for the provider | `sk-...` |
 
-- If you use an OpenAI-compatible endpoint (e.g., a proxy), set both OPENAI_API_BASE and OPENAI_API_KEY to the values provided by that service.
-- For production deployments, set these variables via your runtime’s secret manager or environment, not via a `.env` file.
+### Optional Variables
 
-## Third-Party Libraries (Patched)
+| Variable | Description |
+|----------|-------------|
+| `WANDB_API_KEY` | API key for Weights & Biases experiment tracking |
+| `HF_TOKEN` | Hugging Face access token for private models/datasets |
+
+### Tips
+
+- **OpenAI-compatible endpoints**: Set both `OPENAI_API_BASE` and `OPENAI_API_KEY` to the values provided by your service (e.g., proxy)
+- **Production deployments**: Use your runtime's secret manager or environment variables instead of a `.env` file
+
+---
+
+## 🔧 Third-Party Libraries (Patched)
 
 This project modifies specific versions of two third-party libraries to add research features from the paper:
 
-- TRL 0.19.1: patched to support expectile baseline and Huber-style advantage handling.
-- Unsloth-Zoo 2025.8.9: patched to wire the same features into GRPO training.
+- **TRL 0.19.1**: Patched to support expectile baseline and Huber-style advantage handling
+- **Unsloth-Zoo 2025.8.9**: Patched to wire the same features into GRPO training
 
-What changed
+### What Changed
 
-- Expectile baseline: toggled by --use_expectile_baseline and controlled by --expectile_tau; computes a baseline as an expectile of group returns, which can be more robust to outliers.
-- Huberized advantages: optional clamping via --use_advantage_delta and --advantage_delta for stable optimization when large advantage magnitudes appear.
-- Optional z-score: --normalize_by_std divides by group standard deviation to normalize advantages.
+- **Expectile baseline**: Toggled by `--use_expectile_baseline` and controlled by `--expectile_tau`; computes a baseline as an expectile of group returns, which can be more robust to outliers
+- **Huberized advantages**: Optional clamping via `--use_advantage_delta` and `--advantage_delta` for stable optimization when large advantage magnitudes appear
+- **Optional z-score**: `--normalize_by_std` divides by group standard deviation to normalize advantages
 
-How to install the patched packages locally
+### Installation
 
-1) Download the original packages that match the versions above.
-2) Overwrite their code with our improved implementations placed under third_party/:
-	- third_party/trl-0.19.1/
-	- third_party/unsloth-zoo/
-3) From the project root, run the reinstall script to install them in editable mode:
+1. Download the original packages that match the versions above
+2. Overwrite their code with our improved implementations placed under `third_party/`:
+   - `third_party/trl-0.19.1/`
+   - `third_party/unsloth-zoo/`
+3. From the project root, run the reinstall script to install them in editable mode:
 
 ```bash
 bash scripts/reinstall_trl_unsloth_zoo.sh
 ```
 
-Training flags (CLI)
+### Training Flags (CLI)
 
 Add these arguments to your training script to control the new behavior:
 
-- --use_expectile_baseline (flag): Use τ-expectile baseline instead of mean.
-- --expectile_tau (float, default=0.7): Tau parameter for expectile baseline calculation.
-- --normalize_by_std (flag): Divide by group std (z-score) when computing advantages.
-- --use_advantage_delta (flag): Enable advantage clamp via advantage_delta in GRPO loss.
-- --advantage_delta (float, default=0.65): Clamp magnitude for advantages when enabled.
-- --tau (float, default=0.7): Legacy tau parameter (use --expectile_tau instead).
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--use_expectile_baseline` | flag | - | Use τ-expectile baseline instead of mean |
+| `--expectile_tau` | float | 0.7 | Tau parameter for expectile baseline calculation |
+| `--normalize_by_std` | flag | - | Divide by group std (z-score) when computing advantages |
+| `--use_advantage_delta` | flag | - | Enable advantage clamp via advantage_delta in GRPO loss |
+| `--advantage_delta` | float | 0.65 | Clamp magnitude for advantages when enabled |
+| `--tau` | float | 0.7 | Legacy tau parameter (use `--expectile_tau` instead) |
 
-Example snippet in argparse
+### Example Snippet in Argparse
 
 ```python
 p.add_argument("--use_expectile_baseline", action="store_true", help="Use τ-expectile baseline instead of mean.")
@@ -104,28 +123,32 @@ p.add_argument("--use_advantage_delta", action="store_true", help="Enable advant
 p.add_argument("--advantage_delta", type=float, default=0.65, help="Clamp magnitude for advantages when enabled.")
 ```
 
-## Dataset Preprocessing (MIMIC-IV-Ext-iDS → SFT/RL)
+---
+
+## 📊 Dataset Preprocessing
 
 We provide a helper script to transform MIMIC-IV-Ext-iDS into SFT and RL training splits with subject-level isolation.
 
-- Script: `datasets/preprocess.py`
-- Default input: `datasets/raw/MIMIC-IV-Ext_iDS_with_PR.csv`
-- Outputs (under `datasets/processed/`):
-	- BCH: `BCH_train_sft.csv`, `BCH_train_rl.csv`, `BCH_dev.csv`, `BCH_test.csv`
-	- DI:  `DI_train_sft.csv`,  `DI_train_rl.csv`,  `DI_dev.csv`,  `DI_test.csv`
+### Overview
 
-Tasks
+- **Script**: `datasets/preprocess.py`
+- **Default input**: `datasets/raw/MIMIC-IV-Ext_iDS_with_PR.csv`
+- **Outputs** (under `datasets/processed/`):
+  - **BCH**: `BCH_train_sft.csv`, `BCH_train_rl.csv`, `BCH_dev.csv`, `BCH_test.csv`
+  - **DI**: `DI_train_sft.csv`, `DI_train_rl.csv`, `DI_dev.csv`, `DI_test.csv`
 
-- BCH: predict `brief_hospital_course` from structured inputs
-- DI:  predict `discharge_instructions` from structured inputs plus hospital course and discharge info
+### Tasks
 
-Important
+- **BCH**: Predict `brief_hospital_course` from structured inputs
+- **DI**: Predict `discharge_instructions` from structured inputs plus hospital course and discharge info
 
-- Run the script from the `datasets/` directory so relative paths resolve correctly.
-- Splits are subject-level (patients do not overlap across train/dev/test).
-- If your file name differs, either rename it to `MIMIC-IV-Ext_iDS_with_PR.csv` or modify `RAW_CSV` inside `preprocess.py`.
+### Important Notes
 
-Usage (Ubuntu/Linux)
+- Run the script from the `datasets/` directory so relative paths resolve correctly
+- Splits are subject-level (patients do not overlap across train/dev/test)
+- If your file name differs, either rename it to `MIMIC-IV-Ext_iDS_with_PR.csv` or modify `RAW_CSV` inside `preprocess.py`
+
+### Usage (Ubuntu/Linux)
 
 ```bash
 # Navigate to the datasets folder
@@ -141,18 +164,24 @@ python ./preprocess.py --mode DI  --split 9,0.5,0.5 --rl_ratio 0.2 --seed 42
 python ./preprocess.py --mode DI --max_dev 1500 --max_test 1500 --max_dev_patient 0 --max_test_patient 0
 ```
 
-Arguments
+### Arguments
 
-- `--mode`: `BCH` or `DI`; selects input/target columns for the task.
-- `--split`: train,dev,test patient ratios (default `9,0.5,0.5` → normalized to 90/5/5).
-- `--rl_ratio`: fraction of `train_sft` reused as `train_rl` (default `0.2`).
-- `--max_dev`/`--max_test`: row caps for dev/test (0 = unlimited).
-- `--max_dev_patient`/`--max_test_patient`: patient caps for dev/test (0 = unlimited).
-- `--seed`: random seed for reproducibility.
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `--mode` | `BCH` or `DI`; selects input/target columns for the task | - |
+| `--split` | Train,dev,test patient ratios | `9,0.5,0.5` (90/5/5%) |
+| `--rl_ratio` | Fraction of `train_sft` reused as `train_rl` | `0.2` |
+| `--max_dev` / `--max_test` | Row caps for dev/test (0 = unlimited) | `0` |
+| `--max_dev_patient` / `--max_test_patient` | Patient caps for dev/test (0 = unlimited) | `0` |
+| `--seed` | Random seed for reproducibility | `42` |
 
-## SFT Training (Quick Start)
+---
 
-After preprocessing the dataset, start SFT with the Unsloth-based trainer:
+## 🎯 SFT Training
+
+After preprocessing the dataset, start SFT with the Unsloth-based trainer.
+
+### Quick Start
 
 ```bash
 # DI task
@@ -167,12 +196,16 @@ python ./models/train_sft.py --reasoning_sft \
 	--batch_size 2 --grad_accum 8 --epochs 3 --lr 2e-4
 ```
 
-Notes
+### Notes
 
-- Ensure patched TRL/Unsloth-Zoo are installed via `scripts/reinstall_trl_unsloth_zoo.sh` if you use the expectile/HAL features.
-- More options and details are in `models/README.md`.
+- Ensure patched TRL/Unsloth-Zoo are installed via `scripts/reinstall_trl_unsloth_zoo.sh` if you use the expectile/HAL features
+- More options and details are in `models/README.md`
 
-### Multi-GPU (torchrun)
+---
+
+## 🖥️ Multi-GPU Training
+
+### Using torchrun
 
 ```bash
 # 4 GPUs example
@@ -186,55 +219,58 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --nproc_per_node=4 \
 	--lr 2e-5
 ```
 
-Guidance for Unsloth multi-GPU
+### Guidance for Unsloth Multi-GPU
 
-- You can use Accelerate or DeepSpeed with Unsloth to run DDP/FSDP today.
-- Ensure `ddp_find_unused_parameters = False` in SFTConfig/TrainingArguments (already set in this repo).
-- Launch options:
-	- `accelerate launch ./models/train_sft_multigpu.py --task DI ...`
-	- `torchrun --nproc_per_node N ./models/train_sft_multigpu.py --task DI ...`
-- If VRAM is insufficient per GPU, enable pipeline/model sharding by loading with `device_map="balanced"`:
+- You can use Accelerate or DeepSpeed with Unsloth to run DDP/FSDP today
+- Ensure `ddp_find_unused_parameters = False` in SFTConfig/TrainingArguments (already set in this repo)
+- **Launch options**:
+  - `accelerate launch ./models/train_sft_multigpu.py --task DI ...`
+  - `torchrun --nproc_per_node N ./models/train_sft_multigpu.py --task DI ...`
+- **If VRAM is insufficient per GPU**, enable pipeline/model sharding by loading with `device_map="balanced"`:
 
 ```python
 from unsloth import FastLanguageModel
 model, tokenizer = FastLanguageModel.from_pretrained(
-		"unsloth/Llama-3.3-70B-Instruct",
-		load_in_4bit=True,
-		device_map="balanced",
+	"unsloth/Llama-3.3-70B-Instruct",
+	load_in_4bit=True,
+	device_map="balanced",
 )
 ```
 
+### Community Repos
+
 Community repos that improve multi-GPU with Unsloth:
+- [unsloth-5090-multiple](https://github.com/unslothai/unsloth-5090-multiple)
+- [opensloth](https://github.com/unslothai/opensloth)
 
-- unsloth-5090-multiple
-- opensloth
+---
 
-## Prompts (Templates for Evaluation, Rewards, Extraction, and Generation)
+## 📝 Prompts and Templates
 
 This repo ships reusable prompt assets for judging, reward shaping, structure extraction, and DI generation.
 
-Locations
+### Locations
 
-- `prompts/di_judge/`: clinician-style rubric to grade a Discharge Instruction (DI)
-	- `system.txt`: scoring rubric, JSON schema, and instructions
-	- `user.txt`: input template; replace `{{DI_TEXT}}` with the DI to grade
-- `prompts/reward_function/`: LLM prompts used as reward sources in RL
-	- `r_cover/`: coverage/completeness
-	- `r_medfact/`: medical factual consistency/safety
-	- `r_struct/`: structure/format alignment
-	- `r_style/`: language clarity/readability/tone
-	- Each subfolder contains `system.txt` and `user.txt`, to be wired into your RM harness
-- `prompts/R_struct_extract.txt`: extractor prompt to parse a DI into 9 canonical sections (fixed JSON keys)
-- `prompts/reasoning_datset/system.txt`: system prompt to generate DI in physician letter-style (for reasoning SFT/data)
+- **`prompts/di_judge/`**: Clinician-style rubric to grade a Discharge Instruction (DI)
+  - `system.txt`: Scoring rubric, JSON schema, and instructions
+  - `user.txt`: Input template; replace `{{DI_TEXT}}` with the DI to grade
+- **`prompts/reward_function/`**: LLM prompts used as reward sources in RL
+  - `r_cover/`: Coverage/completeness
+  - `r_medfact/`: Medical factual consistency/safety
+  - `r_struct/`: Structure/format alignment
+  - `r_style/`: Language clarity/readability/tone
+  - Each subfolder contains `system.txt` and `user.txt`, to be wired into your RM harness
+- **`prompts/R_struct_extract.txt`**: Extractor prompt to parse a DI into 9 canonical sections (fixed JSON keys)
+- **`prompts/reasoning_datset/system.txt`**: System prompt to generate DI in physician letter-style (for reasoning SFT/data)
 
-Using with the OpenAI helper
+### Using with the OpenAI Helper
 
 `scripts/openai_helper.py` provides two utilities:
 
-- `load_client()`: loads `OPENAI_API_BASE` and `OPENAI_API_KEY` from environment or `.env` and returns a client.
-- `chat_json_extract(...)`: calls chat completions and returns parsed JSON, with smart handling for DeepSeek-R1 models.
+- `load_client()`: Loads `OPENAI_API_BASE` and `OPENAI_API_KEY` from environment or `.env` and returns a client
+- `chat_json_extract(...)`: Calls chat completions and returns parsed JSON, with smart handling for DeepSeek-R1 models
 
-DI grading example (JSON parsed for you)
+### DI Grading Example (JSON Parsed for You)
 
 ```python
 from pathlib import Path
@@ -254,7 +290,7 @@ result = chat_json_extract(client, model, system, user, temperature=0.2)
 print(result)  # a Python dict parsed from the model's JSON output
 ```
 
-Structure extraction example
+### Structure Extraction Example
 
 ```python
 from pathlib import Path
@@ -273,26 +309,28 @@ sections = chat_json_extract(client, model, system, user)
 print(sections.keys())  # 9 canonical section keys
 ```
 
-Notes
+### Notes
 
-- The helper forces `response_format={"type":"json_object"}` for non‑R1 models, and automatically strips `<think>...</think>` for DeepSeek‑R1 before parsing JSON. Keep the prompts' JSON schema unchanged.
-- Set `GRPO_DEBUG=1` to print raw outputs to stderr when JSON parsing fails.
-- You can stream incrementally via `chat_json_extract(..., stream=True)`; final JSON is parsed after streaming completes.
-- Use `return_raw=True` to also get the original text: `parsed, raw = chat_json_extract(..., return_raw=True)`.
+- The helper forces `response_format={"type":"json_object"}` for non-R1 models, and automatically strips `<think>...</think>` for DeepSeek-R1 before parsing JSON. Keep the prompts' JSON schema unchanged
+- Set `GRPO_DEBUG=1` to print raw outputs to stderr when JSON parsing fails
+- You can stream incrementally via `chat_json_extract(..., stream=True)`; final JSON is parsed after streaming completes
+- Use `return_raw=True` to also get the original text: `parsed, raw = chat_json_extract(..., return_raw=True)`
 
-## GRPO Training (Reinforcement Learning)
+---
+
+## 🤖 GRPO Training (Reinforcement Learning)
 
 Train the DI generator with GRPO using multiple LLM-based reward functions (structure, coverage, medical factuality/safety, and style).
 
-Prerequisites
+### Prerequisites
 
-- Ensure the patched TRL 0.19.1 and Unsloth-Zoo 2025.8.9 are installed (see "Third-Party Libraries (Patched)" above).
-- Set your OpenAI-compatible endpoint in environment variables or a `.env` file: `OPENAI_API_BASE`, `OPENAI_API_KEY`.
+- Ensure the patched TRL 0.19.1 and Unsloth-Zoo 2025.8.9 are installed (see [Third-Party Libraries](#-third-party-libraries-patched))
+- Set your OpenAI-compatible endpoint in environment variables or a `.env` file: `OPENAI_API_BASE`, `OPENAI_API_KEY`
 - Prepare a GRPO CSV (default path `data/processed/mo-grpo-med_dataset.csv`). Required columns:
-	- `note_id`, `formated_source_note`, `gold_di`
-	- `gold_map`, `t_source_anchors`, `t_gold_anchors` (and optionally `t_all_anchors`)
+  - `note_id`, `formated_source_note`, `gold_di`
+  - `gold_map`, `t_source_anchors`, `t_gold_anchors` (and optionally `t_all_anchors`)
 
-Quick start
+### Quick Start
 
 ```powershell
 # PowerShell (Windows)
@@ -315,33 +353,56 @@ python .\models\mo-grpo-med_train.py `
 	--use_advantage_delta --advantage_delta 0.65
 ```
 
-Key flags (selected)
+### Key Flags (Selected)
 
-- `--model_name`: base model to train with Unsloth (4-bit recommended for VRAM efficiency).
-- `--csv_path`: path to the GRPO training CSV (see required columns above).
-- `--limit_samples`: downsample rows for quick experiments (0 = use all).
-- `--max_steps`: number of GRPO steps.
-- Expectile baseline (robust baseline):
-	- `--use_expectile_baseline`, `--expectile_tau` (default 0.7)
-- Huberized advantages (stability):
-	- `--use_advantage_delta`, `--advantage_delta` (default 0.65)
-- Reward LLM selection (also available via env):
-	- `--reward_ds_v3_model`, `--reward_ds_r1_model`
+| Flag | Description |
+|------|-------------|
+| `--model_name` | Base model to train with Unsloth (4-bit recommended for VRAM efficiency) |
+| `--csv_path` | Path to the GRPO training CSV (see required columns above) |
+| `--limit_samples` | Downsample rows for quick experiments (0 = use all) |
+| `--max_steps` | Number of GRPO steps |
+| `--use_expectile_baseline` | Use expectile baseline (robust baseline) |
+| `--expectile_tau` | Tau parameter for expectile baseline (default 0.7) |
+| `--use_advantage_delta` | Enable Huberized advantages (stability) |
+| `--advantage_delta` | Advantage delta value (default 0.65) |
+| `--reward_ds_v3_model` | Reward LLM selection (also available via env) |
+| `--reward_ds_r1_model` | Reward LLM selection (also available via env) |
 
-Outputs and logging
+### Outputs and Logging
 
-- Checkpoints and logs under `checkpoints/grpo/<MODEL>_<TIMESTAMP>/`.
-- The script sets `GRPO_OUTPUT_DIR` to that folder for reward logs.
-- Reward logs (JSONL) include:
-	- `logs/llm_calls.jsonl`: raw/parsed LLM responses used by rewards.
-	- `logs/reward_steps.jsonl`: per-generation intermediate reward data.
-	- `logs/*_zeros.jsonl`: samples where a specific reward evaluated to 0.
-- Caching: `reward_cache.csv` (default path: `${GRPO_CACHE_DIR}/reward_cache.csv` or override via `REWARD_CACHE_CSV`).
+- Checkpoints and logs under `checkpoints/grpo/<MODEL>_<TIMESTAMP>/`
+- The script sets `GRPO_OUTPUT_DIR` to that folder for reward logs
+- **Reward logs (JSONL)** include:
+  - `logs/llm_calls.jsonl`: Raw/parsed LLM responses used by rewards
+  - `logs/reward_steps.jsonl`: Per-generation intermediate reward data
+  - `logs/*_zeros.jsonl`: Samples where a specific reward evaluated to 0
+- **Caching**: `reward_cache.csv` (default path: `${GRPO_CACHE_DIR}/reward_cache.csv` or override via `REWARD_CACHE_CSV`)
 
-Troubleshooting
+### Troubleshooting
 
-- JSON parsing issues: set `GRPO_DEBUG=1` to print raw outputs; the helper automatically strips `<think>...</think>` for DeepSeek‑R1 before parsing.
-- Rate limits/instability: the reward caller retries with exponential backoff; you can lower `LLM_STREAM` to `0` to disable streaming if needed.
-- Missing CSV columns: ensure all required columns exist; otherwise the script will raise a clear error.
+- **JSON parsing issues**: Set `GRPO_DEBUG=1` to print raw outputs; the helper automatically strips `<think>...</think>` for DeepSeek-R1 before parsing
+- **Rate limits/instability**: The reward caller retries with exponential backoff; you can lower `LLM_STREAM` to `0` to disable streaming if needed
+- **Missing CSV columns**: Ensure all required columns exist; otherwise the script will raise a clear error
 
 For details on each reward component (structure/coverage/medfact/style), see `models/rewards/README.md`.
+
+---
+
+## 📝 Citation
+
+This work has been accepted for presentation at the **IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP 2026)**, to be held in Barcelona, Spain, May 4-8, 2026.
+
+If you use this code or find our work helpful, please cite:
+
+```bibtex
+@inproceedings{shen2026mogrpomed,
+  title={MO-GRPO-Med: A Multi-Objective Framework for Generating Safe and High-Quality Discharge Instructions},
+  author={Shen, Qingyang and Zhang, Xiaozhi and Guo, Quan and Yi, Zhang},
+  booktitle={IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)},
+  year={2026},
+  month={May},
+  address={Barcelona, Spain},
+  organization={IEEE},
+  note={Paper ID: 11885}
+}
+```
